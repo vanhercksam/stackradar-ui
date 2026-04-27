@@ -2,15 +2,13 @@ import { createServerFn } from "@tanstack/solid-start";
 import { ApifyClient } from "apify-client";
 import { BlobServiceClient } from "@azure/storage-blob";
 
-// Rate limiting — module-level, persists per server process
 let lastCallTime = 0;
 const RATE_LIMIT_MS = 5 * 60 * 1000;
 
-// Databricks gold table: ranked tech stacks extracted from job descriptions
 export interface StackResult {
   stack: string;
   count: number;
-  percentage: number; // derived server-side
+  percentage: number; 
 }
 
 export interface PipelineInput {
@@ -26,7 +24,6 @@ function requireEnv(name: string): string {
   return val;
 }
 
-// ─── Start both Apify actors (LinkedIn + Indeed), returns run IDs immediately
 export const startPipeline = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => d as PipelineInput)
   .handler(async ({ data }) => {
@@ -52,7 +49,7 @@ export const startPipeline = createServerFn({ method: "POST" })
       apify.actor("hKByXkMQaC5Qt9UMN").start({
         urls: [linkedinUrl],
         scrapeCompany: false,
-        count: 10,
+        count: 20,
         splitByLocation: false,
       }),
       apify.actor(requireEnv("INDEED_ACTOR_ID")).start({
@@ -61,14 +58,13 @@ export const startPipeline = createServerFn({ method: "POST" })
           ({ gb: "uk" } as Record<string, string>)[data.countryKey] ??
           data.countryKey,
         location: data.countryName,
-        limit: 10,
+        limit: 20,
       }),
     ]);
 
     return { apifyRunIds: [r1.id, r2.id] as [string, string] };
   });
 
-// ─── Poll Apify; on success uploads to ADLS and triggers Databricks ──────────
 export const checkApifyRuns = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => d as { runId1: string; runId2: string })
   .handler(
@@ -96,7 +92,6 @@ export const checkApifyRuns = createServerFn({ method: "GET" })
         return { done: false, error: null };
       }
 
-      // Both succeeded — fetch combined dataset
       const [{ items: liItems }, { items: indeedItems }] = await Promise.all([
         apify.dataset(run1!.defaultDatasetId).listItems(),
         apify.dataset(run2!.defaultDatasetId).listItems(),
@@ -107,7 +102,6 @@ export const checkApifyRuns = createServerFn({ method: "GET" })
         ...indeedItems.map((i) => ({ ...(i as object), source: "indeed" })),
       ];
 
-      // Write raw JSON to Azure ADLS Gen2
       const connStr = requireEnv("AZURE_STORAGE_CONNECTION_STRING");
       const containerName = process.env["AZURE_CONTAINER_NAME"] ?? "stackradar";
       const blobName = `raw/jobs_latest.json`;
@@ -119,7 +113,6 @@ export const checkApifyRuns = createServerFn({ method: "GET" })
           blobHTTPHeaders: { blobContentType: "application/json" },
         });
 
-      // Trigger Databricks pipeline
       const dbHost = requireEnv("DATABRICKS_HOST");
       const dbToken = requireEnv("DATABRICKS_TOKEN");
       const dbJobId = parseInt(requireEnv("DATABRICKS_JOB_ID"));
@@ -147,7 +140,6 @@ export const checkApifyRuns = createServerFn({ method: "GET" })
     },
   );
 
-// ─── Databricks run poller: 10 s interval, max 5 min ────────────────────────
 async function pollDatabricksRun(
   dbHost: string,
   dbToken: string,
@@ -172,7 +164,6 @@ async function pollDatabricksRun(
   return { success: false, resultState: "TIMEOUT" };
 }
 
-// ─── Poll Databricks + query gold table — blocking, called once ──────────────
 export const runDatabricksQuery = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => d as { runId: number })
   .handler(

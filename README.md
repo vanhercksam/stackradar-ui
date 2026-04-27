@@ -1,126 +1,58 @@
-Welcome to your new TanStack Start app! 
+# Stack Radar
 
-# Getting Started
+> Discover the most in-demand tech stacks by scraping live job listings from LinkedIn and Indeed.
 
-To run this application:
+Stack Radar is an experimental personal project I built to learn **Databricks in a real, end-to-end context** — not through isolated tutorials, but by designing and wiring a complete workflow: scraping → cloud storage → medallion pipeline → AI extraction → presentation.
 
-```bash
-npm install
-npm run dev
-```
+You pick a job title and country, click a button, and get a ranked breakdown of which technologies appear most in active job listings.
 
-# Building For Production
+---
 
-To build this application for production:
+## Tech stack
 
-```bash
-npm run build
-```
+| Layer | Technology |
+|---|---|
+| Frontend | [SolidJS](https://www.solidjs.com/) + [TanStack Start](https://tanstack.com/start) |
+| Styling | Tailwind CSS v4 |
+| Scraping | [Apify](https://apify.com/) — LinkedIn Jobs Scraper + Indeed Scraper |
+| Storage | Azure Data Lake Storage Gen2 (HNS enabled) |
+| Pipeline | Azure Databricks — PySpark + Delta Lake |
+| AI extraction | Databricks `ai_extract()` built-in AI function |
+| Job orchestration | Databricks Jobs API (`/api/2.1/jobs/run-now`) |
+| SQL query | Databricks SQL Statements API (`/api/2.0/sql/statements`) |
 
-## Styling
+---
 
-This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
+### Scraping — Apify
 
-### Removing Tailwind CSS
+Two actors run in parallel: a LinkedIn Jobs Scraper and an Indeed Scraper. Both return a run ID immediately. The server polls every 15 s until both reach `SUCCEEDED`, then fetches and merges the datasets into one JSON array tagged by source.
 
-If you prefer not to use Tailwind CSS:
+---
 
-1. Remove the demo pages in `src/routes/demo/`
-2. Replace the Tailwind import in `src/styles.css` with your own styles
-3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
-4. Uninstall the packages: `npm install @tailwindcss/vite tailwindcss -D`
+### Storage — Azure ADLS Gen2
 
+The merged JSON is uploaded as a single blob (`raw/jobs_latest.json`) to ADLS Gen2. HNS must be enabled on the storage account — this is what distinguishes it from regular Blob Storage. Each run overwrites the same file.
 
+---
 
-## Routing
+### Databricks — Medallion pipeline
 
-This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
+Three notebooks wired as tasks in a single Databricks Job (bronze → silver → gold).
 
-### Adding A Route
+- **Bronze** — reads the raw JSON from ADLS directly into a Delta table, no transformation.
 
-To add a new route to your application just add a new file in the `./src/routes` directory.
+- **Silver** — normalizes the LinkedIn and Indeed schemas into a unified set of columns, deduplicates listings with a window function, then runs `ai_extract()` on each job description. `ai_extract()` is a Databricks built-in SQL function that calls an LLM to pull structured data from free text — in this case an array of tech stack names. Results are lowercased and deduplicated.
 
-TanStack will automatically generate the content of the route file for you.
+- **Gold** — explodes the tech stacks array so each skill is its own row, then counts occurrences per skill. Output: `skill` and `job_count`.
 
-Now that you have two routes you can use a `Link` component to navigate between them.
+---
 
-### Adding Links
+### Databricks Jobs API — trigger & poll
 
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/solid-router`.
+The job is triggered via `POST /api/2.1/jobs/run-now` with the blob path as a parameter. The server then polls `GET /api/2.1/jobs/runs/get?run_id=<id>` every 10 s (max 5 min) until `life_cycle_state` reaches `TERMINATED`.
 
-```tsx
-import { Link } from "@tanstack/solid-router";
-```
+---
 
-Then anywhere in your JSX you can use it like so:
+### Databricks SQL Statements API — query gold table
 
-```tsx
-<Link to="/about">About</Link>
-```
-
-This will create a link that will navigate to the `/about` route.
-
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/solid/api/router/linkComponent).
-
-### Using A Layout
-
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes.
-
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/solid/guide/routing-concepts#layouts).
-
-## Server Functions
-
-TanStack Start provides server functions that allow you to write server-side code that seamlessly integrates with your client components.
-
-```tsx
-import { createServerFn } from '@tanstack/solid-start'
-
-const getServerTime = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  return new Date().toISOString()
-})
-```
-
-## Data Fetching
-
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
-
-For example:
-
-```tsx
-import { createFileRoute } from '@tanstack/solid-router'
-
-export const Route = createFileRoute('/people')({
-  loader: async () => {
-    const response = await fetch('https://swapi.dev/api/people')
-    return response.json()
-  },
-  component: PeopleComponent,
-})
-
-function PeopleComponent() {
-  const data = Route.useLoaderData()
-  return (
-    <ul>
-      <For each={data().results}>
-        {(person) => <li>{person.name}</li>}
-      </For>
-    </ul>
-  )
-}
-```
-
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/solid/guide/data-loading#loader-parameters).
-
-# Demo files
-
-Files prefixed with `demo` can be safely deleted. They are there to provide a starting point for you to play around with the features you've installed.
-
-
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
-
-For TanStack Start specific documentation, visit [TanStack Start](https://tanstack.com/start).
+Once the job succeeds, the gold table is queried over HTTP via `POST /api/2.0/sql/statements` — no JDBC driver needed. The response returns a `data_array` of `[skill, job_count]` rows, from which the server derives the percentage and returns the ranked list to the frontend.
