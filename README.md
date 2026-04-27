@@ -14,6 +14,8 @@ You pick a job title and country, click a button, and get a ranked breakdown of 
 |---|---|
 | Frontend | [SolidJS](https://www.solidjs.com/) + [TanStack Start](https://tanstack.com/start) |
 | Styling | Tailwind CSS v4 |
+| Containerization | Docker |
+| Deployment | Render.com |
 | Scraping | [Apify](https://apify.com/) — LinkedIn Jobs Scraper + Indeed Scraper |
 | Storage | Azure Data Lake Storage Gen2 (HNS enabled) |
 | Pipeline | Azure Databricks — PySpark + Delta Lake |
