@@ -7,7 +7,8 @@
       "Bash(npx tsc *)",
       "Bash(node -e \"const m = require\\('./node_modules/@tanstack/solid-start'\\); console.log\\(Object.keys\\(m\\)\\)\")",
       "Bash(python -c \"import json; data=json.load\\(open\\('jobs_618jo21VwwXCxere9_Oz8QaDcVhYhWs0IZC.json'\\)\\); print\\('Total items:', len\\(data\\)\\); print\\('Sources:', set\\(x.get\\('source'\\) for x in data\\)\\); print\\('\\\\n--- LinkedIn item keys ---'\\); li=[x for x in data if x.get\\('source'\\)=='linkedin']; print\\(list\\(li[0].keys\\(\\)\\) if li else 'none'\\); print\\('\\\\n--- Indeed item keys ---'\\); ind=[x for x in data if x.get\\('source'\\)=='indeed']; print\\(list\\(ind[0].keys\\(\\)\\) if ind else 'none'\\)\")",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Read(//c/Users/vanhe/Desktop/ROCKIT/rockit/mvps/rockit/ui/**)"
     ]
   }
 }
