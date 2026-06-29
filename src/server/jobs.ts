@@ -201,8 +201,15 @@ export const runDatabricksQuery = createServerFn({ method: "GET" })
 
       const rows = sqlBody.result?.data_array ?? [];
       const total = rows.reduce((s, r) => s + parseInt(r[1] ?? "0"), 0) || 1;
+      const parseSkill = (raw: string): string => {
+        try {
+          const p = JSON.parse(raw) as unknown;
+          if (p && typeof p === "object" && "value" in p) return String((p as { value: unknown }).value);
+        } catch {}
+        return raw;
+      };
       const items: StackResult[] = rows.map((r) => ({
-        stack: r[0],
+        stack: parseSkill(r[0] ?? ""),
         count: parseInt(r[1] ?? "0"),
         percentage: Math.round((parseInt(r[1] ?? "0") / total) * 1000) / 10,
       }));
